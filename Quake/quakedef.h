@@ -4,6 +4,7 @@ Copyright (C) 2002-2009 John Fitzgibbons and others
 Copyright (C) 2007-2008 Kristian Duske
 Copyright (C) 2010-2017 QuakeSpasm developers
 Copyright (C) 2016 Axel Gneiting
+Copyright (C) 2019 James S Urquhart
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
