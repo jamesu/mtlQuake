@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #ifndef __HEAP__
 #define __HEAP__
-
+/*
 typedef struct glheapnode_s
 {
 	VkDeviceSize offset;
@@ -47,5 +47,5 @@ qboolean GL_IsHeapEmpty(glheap_t * heap);
 VkDeviceSize GL_AllocateFromHeaps(int num_heaps, glheap_t ** heaps, VkDeviceSize heap_size, uint32_t memory_type_index,
 	VkDeviceSize size, VkDeviceSize alignment, glheap_t ** heap, glheapnode_t ** heap_node, int * num_allocations, const char * heap_name);
 void GL_FreeFromHeaps(int num_heaps, glheap_t ** heaps, glheap_t * heap, glheapnode_t * heap_node, int * num_allocations);
-
+*/
 #endif

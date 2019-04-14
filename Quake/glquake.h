@@ -50,6 +50,7 @@ extern	int glx, gly, glwidth, glheight;
 
 #define	MAX_GLTEXTURES	2048
 #define NUM_COLOR_BUFFERS 2
+#define NUM_FORWARD_FRAMES 2
 #define INITIAL_STAGING_BUFFER_SIZE_KB	16384
 
 #define FAN_INDEX_BUFFER_SIZE 126
@@ -107,109 +108,20 @@ typedef struct particle_s
 
 #define WORLD_PIPELINE_COUNT 8
 
-typedef struct
-{
-	VkDevice							device;
-	qboolean							device_idle;
-	qboolean							validation;
-	VkQueue								queue;
-	VkCommandBuffer						command_buffer;
-	VkPipeline							current_pipeline;
-	VkClearValue						color_clear_value;
-	VkFormat							swap_chain_format;
-	VkPhysicalDeviceProperties			device_properties;
-	VkPhysicalDeviceMemoryProperties	memory_properties;
-	uint32_t							gfx_queue_family_index;
-	VkFormat							color_format;
-	VkFormat							depth_format;
-	VkSampleCountFlagBits				sample_count;
-	qboolean							supersampling;
-	qboolean							non_solid_fill;
-
-	// Extensions
-	qboolean							dedicated_allocation;
-
-	// Buffers
-	VkImage								color_buffers[NUM_COLOR_BUFFERS];
-
-	// Index buffers
-	VkBuffer							fan_index_buffer;
-
-	// Staging buffers
-	int									staging_buffer_size;
-
-	// Render passes
-	VkRenderPass						main_render_pass;
-	VkClearValue						main_clear_values[4];
-	VkRenderPassBeginInfo				main_render_pass_begin_infos[2];
-	VkRenderPass						ui_render_pass;
-	VkRenderPassBeginInfo				ui_render_pass_begin_info;
-	VkRenderPass						warp_render_pass;
-
-	// Pipelines
-	VkPipeline							basic_alphatest_pipeline[2];
-	VkPipeline							basic_blend_pipeline[2];
-	VkPipeline							basic_notex_blend_pipeline[2];
-	VkPipeline							basic_poly_blend_pipeline;
-	VkPipelineLayout					basic_pipeline_layout;
-	VkPipeline							world_pipelines[WORLD_PIPELINE_COUNT];
-	VkPipelineLayout					world_pipeline_layout;
-	VkPipeline							water_pipeline;
-	VkPipeline							water_blend_pipeline;
-	VkPipeline							raster_tex_warp_pipeline;
-	VkPipeline							particle_pipeline;
-	VkPipeline							sprite_pipeline;
-	VkPipeline							sky_color_pipeline;
-	VkPipeline							sky_box_pipeline;
-	VkPipeline							sky_layer_pipeline;
-	VkPipelineLayout					sky_layer_pipeline_layout;
-	VkPipeline							alias_pipeline;
-	VkPipeline							alias_blend_pipeline;
-	VkPipeline							alias_alphatest_pipeline;
-	VkPipelineLayout					alias_pipeline_layout;
-	VkPipeline							postprocess_pipeline;
-	VkPipelineLayout					postprocess_pipeline_layout;
-	VkPipeline							screen_warp_pipeline;
-	VkPipelineLayout					screen_warp_pipeline_layout;
-	VkPipeline							cs_tex_warp_pipeline;
-	VkPipelineLayout					cs_tex_warp_pipeline_layout;
-	VkPipeline							showtris_pipeline;
-	VkPipeline							showtris_depth_test_pipeline;
-	VkPipelineLayout					showtris_pipeline_layout;
-
-	// Descriptors
-	VkDescriptorPool					descriptor_pool;
-	VkDescriptorSetLayout				ubo_set_layout;
-	VkDescriptorSetLayout				single_texture_set_layout;
-	VkDescriptorSetLayout				input_attachment_set_layout;
-	VkDescriptorSet						screen_warp_desc_set;
-	VkDescriptorSetLayout				screen_warp_set_layout;
-	VkDescriptorSetLayout				single_texture_cs_write_set_layout;
-
-	// Samplers
-	VkSampler							point_sampler;
-	VkSampler							linear_sampler;
-	VkSampler							point_aniso_sampler;
-	VkSampler							linear_aniso_sampler;
-
-	// Matrices
-	float								projection_matrix[16];
-	float								view_matrix[16];
-	float								view_projection_matrix[16];
-
-	//Dispatch table
-	PFN_vkCmdBindPipeline				vk_cmd_bind_pipeline;
-	PFN_vkCmdPushConstants				vk_cmd_push_constants;
-	PFN_vkCmdBindDescriptorSets			vk_cmd_bind_descriptor_sets;
-	PFN_vkCmdBindIndexBuffer			vk_cmd_bind_index_buffer;
-	PFN_vkCmdBindVertexBuffers			vk_cmd_bind_vertex_buffers;
-	PFN_vkCmdDraw						vk_cmd_draw;
-	PFN_vkCmdDrawIndexed				vk_cmd_draw_indexed;
-	PFN_vkCmdPipelineBarrier			vk_cmd_pipeline_barrier;
-	PFN_vkCmdCopyBufferToImage			vk_cmd_copy_buffer_to_image;
-} vulkanglobals_t;
-
-extern vulkanglobals_t vulkan_globals;
+/*
+ 
+ qboolean                     device_idle;
+ qboolean                     validation;
+ uint32_t                     gfx_queue_family_index;
+ qboolean                     supersampling;
+ qboolean                     non_solid_fill;
+ qboolean                     dedicated_allocation;
+ int                           staging_buffer_size;
+ // Matrices
+ float                        projection_matrix[16];
+ float                        view_matrix[16];
+ float                        view_projection_matrix[16];
+ */
 
 //====================================================
 
@@ -394,34 +306,21 @@ void R_DrawWorld_Water (void);
 
 float GL_WaterAlphaForSurface (msurface_t *fa);
 
-int GL_MemoryTypeFromProperties(uint32_t type_bits, VkFlags requirements_mask, VkFlags preferred_mask);
 
-void R_CreateDescriptorPool();
-void R_CreateDescriptorSetLayouts();
-void R_InitSamplers();
-void R_CreatePipelineLayouts();
-void R_CreatePipelines();
-void R_DestroyPipelines();
+void R_CreateDescriptorPool(void);
+void R_CreateDescriptorSetLayouts(void);
+void R_InitSamplers(void);
+void R_CreatePipelineLayouts(void);
+void R_CreatePipelines(void);
+void R_DestroyPipelines(void);
 
-static inline void R_BindPipeline(VkPipeline pipeline) {
-	if(vulkan_globals.current_pipeline != pipeline) {
-		vulkan_globals.vk_cmd_bind_pipeline(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-		vulkan_globals.current_pipeline = pipeline;
-	}
-}
+void R_InitStagingBuffers(void);
+void R_SubmitStagingBuffers(void);
+byte * R_StagingAllocate(int size, int alignment, int * buffer_offset);
 
-void R_InitStagingBuffers();
-void R_SubmitStagingBuffers();
-byte * R_StagingAllocate(int size, int alignment, VkCommandBuffer * command_buffer, VkBuffer * buffer, int * buffer_offset);
-
-void R_InitGPUBuffers();
-void R_SwapDynamicBuffers();
-void R_FlushDynamicBuffers();
-byte * R_VertexAllocate(int size, VkBuffer * buffer, VkDeviceSize * buffer_offset);
-byte * R_IndexAllocate(int size, VkBuffer * buffer, VkDeviceSize * buffer_offset);
-byte * R_UniformAllocate(int size, VkBuffer * buffer, uint32_t * buffer_offset, VkDescriptorSet * descriptor_set);
-
-void GL_SetObjectName(uint64_t object, VkDebugReportObjectTypeEXT objectType, const char * name);
+void R_InitGPUBuffers(void);
+void R_SwapDynamicBuffers(void);
+void R_FlushDynamicBuffers(void);
 
 #endif	/* __GLQUAKE_H */
 

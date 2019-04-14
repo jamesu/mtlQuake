@@ -24,6 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //gl_sky.c
 
 #include "quakedef.h"
+#include "mtl_renderstate.h"
 
 #define	MAX_CLIP_VERTS 64
 
@@ -718,10 +719,10 @@ void Sky_DrawSkyBox (void)
 		if (skymins[0][i] >= skymaxs[0][i] || skymins[1][i] >= skymaxs[1][i])
 			continue;
 
-		vkCmdBindDescriptorSets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_pipeline_layout, 0, 1, &skybox_textures[skytexorder[i]]->descriptor_set, 0, NULL);
+		TexMgr_BindTexture(skybox_textures[skytexorder[i]], 0, 0);
 
-		VkBuffer buffer;
-		VkDeviceSize buffer_offset;
+		id<MTLBuffer> buffer;
+		uint32_t buffer_offset;
 		basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(4 * sizeof(basicvertex_t), &buffer, &buffer_offset);
 
 #if 1 //FIXME: this is to avoid tjunctions until i can do it the right way
@@ -735,9 +736,9 @@ void Sky_DrawSkyBox (void)
 		Sky_EmitSkyBoxVertex (vertices + 2, skymaxs[0][i], skymaxs[1][i], i);
 		Sky_EmitSkyBoxVertex (vertices + 3, skymaxs[0][i], skymins[1][i], i);
 
-		vkCmdBindVertexBuffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-		R_BindPipeline(vulkan_globals.sky_box_pipeline);
-		vkCmdDrawIndexed(vulkan_globals.command_buffer, 6, 1, 0, 0, 0);
+		R_BindPipeline(&r_metalstate.sky_box_pipeline);
+		[r_metalstate.render_encoder setVertexBuffer:buffer offset:buffer_offset atIndex:VBO_Vertex_Start];
+		[r_metalstate.render_encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:6 indexType:MTLIndexTypeUInt16 indexBuffer:r_metalstate.fan_index_buffer indexBufferOffset:0];
 
 		rs_skypolys++;
 		rs_skypasses++;
@@ -746,8 +747,6 @@ void Sky_DrawSkyBox (void)
 		{
 			float *c = Fog_GetColor();
 
-			VkBuffer buffer;
-			VkDeviceSize buffer_offset;
 			basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(4 * sizeof(basicvertex_t), &buffer, &buffer_offset);
 
 			Sky_EmitSkyBoxVertex (vertices + 0, skymins[0][i], skymins[1][i], i);
@@ -763,9 +762,9 @@ void Sky_DrawSkyBox (void)
 				vertices[j].color[3] = CLAMP(0.0,skyfog,1.0) * 255.0f;
 			}
 
-			vkCmdBindVertexBuffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-			R_BindPipeline(vulkan_globals.basic_poly_blend_pipeline);
-			vkCmdDrawIndexed(vulkan_globals.command_buffer, 6, 1, 0, 0, 0);
+			R_BindPipeline(&r_metalstate.basic_poly_blend_pipeline);
+			[r_metalstate.render_encoder setVertexBuffer:buffer offset:buffer_offset atIndex:VBO_Vertex_Start];
+			[r_metalstate.render_encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:6 indexType:MTLIndexTypeUInt16 indexBuffer:r_metalstate.fan_index_buffer indexBufferOffset:0];
 
 			rs_skypasses++;
 		}
@@ -837,11 +836,11 @@ void Sky_DrawFaceQuad (glpoly_t *p, float alpha)
 	float	*v;
 	int		i;
 
-	VkDescriptorSet descriptor_sets[2] = { solidskytexture->descriptor_set, alphaskytexture->descriptor_set };
-	vkCmdBindDescriptorSets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.sky_layer_pipeline_layout, 0, 2, descriptor_sets, 0, NULL);
+	TexMgr_BindTexture(solidskytexture, 0, 0);
+	TexMgr_BindTexture(alphaskytexture, 1, 1);
 
-	VkBuffer vertex_buffer;
-	VkDeviceSize vertex_buffer_offset;
+	id<MTLBuffer> vertex_buffer;
+	uint32_t vertex_buffer_offset;
 	skylayervertex_t * vertices = (skylayervertex_t*)R_VertexAllocate(4 * sizeof(skylayervertex_t), &vertex_buffer, &vertex_buffer_offset);
 
 	for (i=0, v=p->verts[0] ; i<4 ; i++, v+=VERTEXSIZE)
@@ -859,9 +858,9 @@ void Sky_DrawFaceQuad (glpoly_t *p, float alpha)
 		vertices[i].color[3] = alpha * 255.0f;
 	}
 
-	vkCmdBindVertexBuffers(vulkan_globals.command_buffer, 0, 1, &vertex_buffer, &vertex_buffer_offset);
-	R_BindPipeline(vulkan_globals.sky_layer_pipeline);
-	vkCmdDrawIndexed(vulkan_globals.command_buffer, 6, 1, 0, 0, 0);
+	R_BindPipeline(&r_metalstate.sky_layer_pipeline);
+	[r_metalstate.render_encoder setVertexBuffer:vertex_buffer offset:vertex_buffer_offset atIndex:VBO_Vertex_Start];
+	[r_metalstate.render_encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:6 indexType:MTLIndexTypeUInt16 indexBuffer:r_metalstate.fan_index_buffer indexBufferOffset:0];
 
 	rs_skypolys++;
 	rs_skypasses++;
@@ -870,9 +869,7 @@ void Sky_DrawFaceQuad (glpoly_t *p, float alpha)
 	{
 		float *c = Fog_GetColor();
 
-		VkBuffer buffer;
-		VkDeviceSize buffer_offset;
-		basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(4 * sizeof(basicvertex_t), &buffer, &buffer_offset);
+		basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(4 * sizeof(basicvertex_t), &vertex_buffer, &vertex_buffer_offset);
 		
 		for (i=0, v=p->verts[0] ; i<4 ; i++, v+=VERTEXSIZE)
 		{
@@ -887,9 +884,9 @@ void Sky_DrawFaceQuad (glpoly_t *p, float alpha)
 			vertices[i].color[3] = CLAMP(0.0,skyfog,1.0) * 255.0f;
 		}
 
-		vkCmdBindVertexBuffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-		R_BindPipeline(vulkan_globals.basic_poly_blend_pipeline);
-		vkCmdDrawIndexed(vulkan_globals.command_buffer, 6, 1, 0, 0, 0);
+		R_BindPipeline(&r_metalstate.basic_poly_blend_pipeline);
+		[r_metalstate.render_encoder setVertexBuffer:vertex_buffer offset:vertex_buffer_offset atIndex:VBO_Vertex_Start];
+		[r_metalstate.render_encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:6 indexType:MTLIndexTypeUInt16 indexBuffer:r_metalstate.fan_index_buffer indexBufferOffset:0];
 
 		rs_skypasses++;
 	}
@@ -993,8 +990,7 @@ void Sky_DrawSky (void)
 		skymaxs[0][i] = skymaxs[1][i] = -9999;
 	}
 
-	R_BindPipeline(vulkan_globals.sky_color_pipeline);
-	vkCmdBindIndexBuffer(vulkan_globals.command_buffer, vulkan_globals.fan_index_buffer, 0, VK_INDEX_TYPE_UINT16);
+	R_BindPipeline(&r_metalstate.sky_color_pipeline);
 
 	//
 	// process world and bmodels: draw flat-shaded sky surfs, and update skybounds

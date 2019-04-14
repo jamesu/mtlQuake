@@ -2288,8 +2288,8 @@ void COM_InitFilesystem (void) //johnfitz -- modified based on topaz's tutorial
 		}
 	}
 
-	if (COM_CheckParm ("-validation"))
-		vulkan_globals.validation = true;
+	//if (COM_CheckParm ("-validation"))
+	//	r_metalstate.validation = true;
 
 	COM_CheckRegistered ();
 }

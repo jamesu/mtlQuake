@@ -24,6 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // r_brush.c: brush model rendering. renamed from r_surf.c
 
 #include "quakedef.h"
+#include "mtl_renderstate.h"
 
 extern cvar_t gl_fullbrights, r_drawflat; //johnfitz
 extern cvar_t gl_zfix; // QuakeSpasm z-fighting fix
@@ -53,8 +54,7 @@ int			last_lightmap_allocated; //ericw -- optimization: remember the index of th
 // main memory so texsubimage can update properly
 byte		lightmaps[4*MAX_LIGHTMAPS*BLOCK_WIDTH*BLOCK_HEIGHT];
 
-static VkDeviceMemory	bmodel_memory;
-VkBuffer				bmodel_vertex_buffer;
+id<MTLBuffer>				bmodel_vertex_buffer;
 
 extern cvar_t r_showtris;
 
@@ -103,8 +103,10 @@ void DrawGLPoly (glpoly_t *p, float color[3], float alpha)
 	const int numtriangles = (numverts - 2);
 	const int numindices = numtriangles * 3;
 
-	VkBuffer vertex_buffer;
-	VkDeviceSize vertex_buffer_offset;
+	id<MTLBuffer> vertex_buffer;
+	id<MTLBuffer> index_buffer;
+	uint32_t vertex_buffer_offset=0;
+	uint32_t index_buffer_offset=0;
 
 	basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(numverts * sizeof(basicvertex_t), &vertex_buffer, &vertex_buffer_offset);
 
@@ -130,8 +132,8 @@ void DrawGLPoly (glpoly_t *p, float color[3], float alpha)
 	// TODO: Find out if it's necessary
 	if (numindices > FAN_INDEX_BUFFER_SIZE)
 	{
-		VkBuffer index_buffer;
-		VkDeviceSize index_buffer_offset;
+		id<MTLBuffer> index_buffer;
+		uint32_t index_buffer_offset;
 
 		uint16_t * indices = (uint16_t *)R_IndexAllocate(numindices * sizeof(uint16_t), &index_buffer, &index_buffer_offset);
 		for (i = 0; i < numtriangles; ++i)
@@ -140,13 +142,17 @@ void DrawGLPoly (glpoly_t *p, float color[3], float alpha)
 			indices[current_index++] = 1 + i;
 			indices[current_index++] = 2 + i;
 		}
-		vulkan_globals.vk_cmd_bind_index_buffer(vulkan_globals.command_buffer, index_buffer, index_buffer_offset, VK_INDEX_TYPE_UINT16);
 	}
 	else
-		vulkan_globals.vk_cmd_bind_index_buffer(vulkan_globals.command_buffer, vulkan_globals.fan_index_buffer, 0, VK_INDEX_TYPE_UINT16);
-
-	vulkan_globals.vk_cmd_bind_vertex_buffers(vulkan_globals.command_buffer, 0, 1, &vertex_buffer, &vertex_buffer_offset);
-	vulkan_globals.vk_cmd_draw_indexed(vulkan_globals.command_buffer, numindices, 1, 0, 0, 0);
+	{
+		index_buffer = r_metalstate.fan_index_buffer;
+		index_buffer_offset = 0;
+	}
+	
+	// Render poly
+	R_UpdatePushConstants();
+	[r_metalstate.render_encoder setVertexBuffer:vertex_buffer offset:vertex_buffer_offset atIndex:VBO_Vertex_Start];
+	[r_metalstate.render_encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:numindices indexType:MTLIndexTypeUInt16 indexBuffer:index_buffer indexBufferOffset:(NSUInteger)index_buffer_offset];
 }
 
 /*
@@ -225,10 +231,12 @@ void R_DrawBrushModel (entity_t *e)
 	e->angles[0] = -e->angles[0];	// stupid quake bug
 
 	float mvp[16];
-	memcpy(mvp, vulkan_globals.view_projection_matrix, 16 * sizeof(float));
+	memcpy(mvp, r_metalstate.view_projection_matrix, 16 * sizeof(float));
 	MatrixMultiply(mvp, model_matrix);
 
-	vulkan_globals.vk_cmd_push_constants(vulkan_globals.command_buffer, vulkan_globals.basic_pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, 16 * sizeof(float), mvp);
+	memcpy(&r_metalstate.push_constants[0], &mvp[0], 16 * sizeof(float));
+	r_metalstate.push_constants_dirty = true;
+	R_UpdatePushConstants();
 
 	R_ClearTextureChains (clmodel, chain_model);
 	for (i=0 ; i<clmodel->nummodelsurfaces ; i++, psurf++)
@@ -245,8 +253,9 @@ void R_DrawBrushModel (entity_t *e)
 
 	R_DrawTextureChains (clmodel, e, chain_model);
 	R_DrawTextureChains_Water (clmodel, e, chain_model);
-
-	vulkan_globals.vk_cmd_push_constants(vulkan_globals.command_buffer, vulkan_globals.basic_pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, 16 * sizeof(float), vulkan_globals.view_projection_matrix);
+	
+	memcpy(&r_metalstate.push_constants[0], &r_metalstate.view_projection_matrix[0], 16 * sizeof(float));
+	r_metalstate.push_constants_dirty = true;
 }
 
 /*
@@ -292,15 +301,16 @@ void R_DrawBrushModel_ShowTris(entity_t *e)
 	e->angles[0] = -e->angles[0];	// stupid quake bug
 
 	float mvp[16];
-	memcpy(mvp, vulkan_globals.view_projection_matrix, 16 * sizeof(float));
+	memcpy(mvp, r_metalstate.view_projection_matrix, 16 * sizeof(float));
 	MatrixMultiply(mvp, model_matrix);
-
-	vulkan_globals.vk_cmd_push_constants(vulkan_globals.command_buffer, vulkan_globals.basic_pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, 16 * sizeof(float), mvp);
+	
+	memcpy(&r_metalstate.push_constants[0], &mvp[0], 16 * sizeof(float));
+	r_metalstate.push_constants_dirty = true;
 
 	if (r_showtris.value == 1)
-		R_BindPipeline(vulkan_globals.showtris_pipeline);
+		R_BindPipeline(&r_metalstate.showtris_pipeline);
 	else
-		R_BindPipeline(vulkan_globals.showtris_depth_test_pipeline);
+		R_BindPipeline(&r_metalstate.showtris_depth_test_pipeline);
 
 	//
 	// draw it
@@ -316,7 +326,8 @@ void R_DrawBrushModel_ShowTris(entity_t *e)
 		}
 	}
 
-	vulkan_globals.vk_cmd_push_constants(vulkan_globals.command_buffer, vulkan_globals.basic_pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, 16 * sizeof(float), vulkan_globals.view_projection_matrix);
+	memcpy(&r_metalstate.push_constants[0], &r_metalstate.view_projection_matrix[0], 16 * sizeof(float));
+	r_metalstate.push_constants_dirty = true;
 }
 
 /*
@@ -337,7 +348,7 @@ void R_RenderDynamicLightmaps (msurface_t *fa)
 {
 	byte		*base;
 	int			maps;
-	glRect_t    *theRect;
+	glRect_t	 *theRect;
 	int smax, tmax;
 
 	if (fa->flags & SURF_DRAWTILED) //johnfitz -- not a lightmapped surface
@@ -616,16 +627,9 @@ void GL_BuildLightmaps (void)
 
 void GL_DeleteBModelVertexBuffer (void)
 {
-	GL_WaitForDeviceIdle();
-
-	if (bmodel_vertex_buffer)
-		vkDestroyBuffer(vulkan_globals.device, bmodel_vertex_buffer, NULL);
-
-	if (bmodel_memory)
-	{
-		num_vulkan_bmodel_allocations -= 1;
-		vkFreeMemory(vulkan_globals.device, bmodel_memory, NULL);
-	}
+	//GL_WaitForDeviceIdle();
+	bmodel_vertex_buffer = nil;
+	num_metal_bmodel_allocations--;
 }
 
 /*
@@ -661,7 +665,12 @@ void GL_BuildBModelVertexBuffer (void)
 	
 	// build vertex array
 	varray_bytes = VERTEXSIZE * sizeof(float) * numverts;
-	varray = (float *) malloc (varray_bytes);
+	const int align_mod = varray_bytes % r_metalstate.vbo_alignment;
+	const int aligned_size = ((varray_bytes % r_metalstate.vbo_alignment) == 0)
+	? varray_bytes
+	: (varray_bytes + r_metalstate.vbo_alignment - align_mod);
+	
+	varray = (float *) malloc (aligned_size);
 	varray_index = 0;
 	
 	for (j=1 ; j<MAX_MODELS ; j++)
@@ -680,67 +689,10 @@ void GL_BuildBModelVertexBuffer (void)
 	}
 
 	// Allocate & upload to GPU
-	VkResult err;
-
-	VkBufferCreateInfo buffer_create_info;
-	memset(&buffer_create_info, 0, sizeof(buffer_create_info));
-	buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer_create_info.size = varray_bytes;
-	buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	err = vkCreateBuffer(vulkan_globals.device, &buffer_create_info, NULL, &bmodel_vertex_buffer);
-	if (err != VK_SUCCESS)
-		Sys_Error("vkCreateBuffer failed");
-
-	GL_SetObjectName((uint64_t)bmodel_vertex_buffer, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, "Brush Vertex Buffer");
-
-	VkMemoryRequirements memory_requirements;
-	vkGetBufferMemoryRequirements(vulkan_globals.device, bmodel_vertex_buffer, &memory_requirements);
-
-	const int align_mod = memory_requirements.size % memory_requirements.alignment;
-	const int aligned_size = ((memory_requirements.size % memory_requirements.alignment) == 0 ) 
-		? memory_requirements.size 
-		: (memory_requirements.size + memory_requirements.alignment - align_mod);
-
-	VkMemoryAllocateInfo memory_allocate_info;
-	memset(&memory_allocate_info, 0, sizeof(memory_allocate_info));
-	memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	memory_allocate_info.allocationSize = aligned_size;
-	memory_allocate_info.memoryTypeIndex = GL_MemoryTypeFromProperties(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
-
-	num_vulkan_bmodel_allocations += 1;
-	err = vkAllocateMemory(vulkan_globals.device, &memory_allocate_info, NULL, &bmodel_memory);
-	if (err != VK_SUCCESS)
-		Sys_Error("vkAllocateMemory failed");
-
-	GL_SetObjectName((uint64_t)bmodel_memory, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, "Brush Memory");
-
-	err = vkBindBufferMemory(vulkan_globals.device, bmodel_vertex_buffer, bmodel_memory, 0);
-	if (err != VK_SUCCESS)
-		Sys_Error("vkBindImageMemory failed");
-
-	remaining_size = varray_bytes;
-	copy_offset = 0;
-
-	while (remaining_size > 0)
-	{
-		const int size_to_copy = q_min(remaining_size, vulkan_globals.staging_buffer_size);
-		VkBuffer staging_buffer;
-		VkCommandBuffer command_buffer;
-		int staging_offset;
-		unsigned char * staging_memory = R_StagingAllocate(size_to_copy, 1, &command_buffer, &staging_buffer, &staging_offset);
-
-		memcpy(staging_memory, (byte*)varray + copy_offset, size_to_copy);
-
-		VkBufferCopy region;
-		region.srcOffset = staging_offset;
-		region.dstOffset = copy_offset;
-		region.size = size_to_copy;
-		vkCmdCopyBuffer(command_buffer, staging_buffer, bmodel_vertex_buffer, 1, &region);
-
-		copy_offset += size_to_copy;
-		remaining_size -= size_to_copy;
-	}
-
+	bmodel_vertex_buffer = [r_metalstate.device newBufferWithBytes:varray length:aligned_size options:MTLResourceCPUCacheModeDefaultCache];
+	bmodel_vertex_buffer.label = @"Brush Vertex Buffer";
+	num_metal_bmodel_allocations++;
+	
 	free (varray);
 }
 
@@ -920,60 +872,21 @@ static void R_UploadLightmap(int lmap, gltexture_t * lightmap)
 	glRect_t	*theRect;
 
 	lightmap_modified[lmap] = false;
-
-	theRect = &lightmap_rectchange[lmap];
-	const int staging_size = BLOCK_WIDTH * theRect->h * 4;
-
-	VkBuffer staging_buffer;
-	VkCommandBuffer command_buffer;
-	int staging_offset;
-	unsigned char * staging_memory = R_StagingAllocate(staging_size, 4, &command_buffer, &staging_buffer, &staging_offset);
-
-	byte * data = lightmaps + (lmap * BLOCK_HEIGHT + theRect->t) * BLOCK_WIDTH * lightmap_bytes;
-	memcpy(staging_memory, data, staging_size);
-
-	VkBufferImageCopy region;
-	memset(&region, 0, sizeof(region));
-	region.bufferOffset = staging_offset;
-	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	region.imageSubresource.layerCount = 1;
-	region.imageSubresource.mipLevel = 0;
-	region.imageExtent.width = BLOCK_WIDTH;
-	region.imageExtent.height = theRect->h;
-	region.imageExtent.depth = 1;
-	region.imageOffset.y = theRect->t;
-
-	VkImageMemoryBarrier image_memory_barrier;
-	memset(&image_memory_barrier, 0, sizeof(image_memory_barrier));
-	image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	image_memory_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-	image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	image_memory_barrier.image = lightmap->image;
-	image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	image_memory_barrier.subresourceRange.baseMipLevel = 0;
-	image_memory_barrier.subresourceRange.levelCount = 1;
-	image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-	image_memory_barrier.subresourceRange.layerCount = 1;
-
-	vulkan_globals.vk_cmd_pipeline_barrier(command_buffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &image_memory_barrier);
 	
-	vulkan_globals.vk_cmd_copy_buffer_to_image(command_buffer, staging_buffer, lightmap->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+	theRect = &lightmap_rectchange[lmap];
+	
+	byte * data = lightmaps + (lmap * BLOCK_HEIGHT + theRect->t) * BLOCK_WIDTH * lightmap_bytes;
 
-	image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-	vulkan_globals.vk_cmd_pipeline_barrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &image_memory_barrier);
+	[TexMgr_GetPrivateData(lightmap)->texture replaceRegion: MTLRegionMake2D(0, theRect->t, BLOCK_WIDTH, theRect->h)
+			 mipmapLevel:0
+				withBytes:data
+			 bytesPerRow:BLOCK_WIDTH * lightmap_bytes];
 
 	theRect->l = BLOCK_WIDTH;
 	theRect->t = BLOCK_HEIGHT;
 	theRect->h = 0;
 	theRect->w = 0;
-
+	
 	rs_dynamiclightmaps++;
 }
 

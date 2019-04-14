@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // on the same machine.
 
 #include "quakedef.h"
+#include "mtl_renderstate.h"
 
 qmodel_t	*loadmodel;
 char	loadname[32];	// for hunk tags
@@ -219,11 +220,13 @@ void Mod_ClearAll (void)
 	qmodel_t	*mod;
 
 	for (i=0 , mod=mod_known ; i<mod_numknown ; i++, mod++)
+	{
 		if (mod->type != mod_alias)
 		{
 			mod->needload = true;
 			TexMgr_FreeTexturesForOwner (mod); //johnfitz
 		}
+	}
 }
 
 void Mod_ResetAll (void)

@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // draw.c -- 2d drawing
 
 #include "quakedef.h"
+#include "mtl_renderstate.h"
 
 cvar_t		scr_conalpha = {"scr_conalpha", "0.5", CVAR_ARCHIVE}; //johnfitz
 
@@ -489,16 +490,18 @@ void Draw_Character (int x, int y, int num)
 	if (num == 32)
 		return; //don't waste verts on spaces
 
-	VkBuffer buffer;
-	VkDeviceSize buffer_offset;
+	id<MTLBuffer> buffer;
+	uint32_t buffer_offset;
 	basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(6 * sizeof(basicvertex_t), &buffer, &buffer_offset);
 
+	R_UpdatePushConstants();
 	Draw_FillCharacterQuad(x, y, (char)num, vertices);
 
-	vulkan_globals.vk_cmd_bind_vertex_buffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-	R_BindPipeline(vulkan_globals.basic_alphatest_pipeline[render_pass_index]);
-	vulkan_globals.vk_cmd_bind_descriptor_sets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_pipeline_layout, 0, 1, &char_texture->descriptor_set, 0, NULL);
-	vulkan_globals.vk_cmd_draw(vulkan_globals.command_buffer, 6, 1, 0, 0);
+	R_BindPipeline(&r_metalstate.basic_alphatest_pipeline[render_pass_index]);
+	R_UpdatePushConstants();
+	[r_metalstate.render_encoder setVertexBuffer:buffer offset:buffer_offset atIndex:VBO_Vertex_Start];
+	TexMgr_BindTexture(char_texture, 0, 0);
+	[r_metalstate.render_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
 }
 
 /*
@@ -519,8 +522,8 @@ void Draw_String (int x, int y, const char *str)
 		if (*tmp != 32)
 			num_verts += 6;
 
-	VkBuffer buffer;
-	VkDeviceSize buffer_offset;
+	id<MTLBuffer> buffer;
+	uint32_t buffer_offset;
 	basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(num_verts * sizeof(basicvertex_t), &buffer, &buffer_offset);
 
 	for (i = 0; *str != 0; ++str)
@@ -533,10 +536,11 @@ void Draw_String (int x, int y, const char *str)
 		x += 8;
 	}
 
-	vulkan_globals.vk_cmd_bind_vertex_buffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-	R_BindPipeline(vulkan_globals.basic_alphatest_pipeline[render_pass_index]);
-	vulkan_globals.vk_cmd_bind_descriptor_sets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_pipeline_layout, 0, 1, &char_texture->descriptor_set, 0, NULL);
-	vulkan_globals.vk_cmd_draw(vulkan_globals.command_buffer, num_verts, 1, 0, 0);
+	R_BindPipeline(&r_metalstate.basic_alphatest_pipeline[render_pass_index]);
+	R_UpdatePushConstants();
+	[r_metalstate.render_encoder setVertexBuffer:buffer offset:buffer_offset atIndex:VBO_Vertex_Start];
+	TexMgr_BindTexture(char_texture, 0, 0);
+	[r_metalstate.render_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:num_verts];
 }
 
 /*
@@ -553,8 +557,8 @@ void Draw_Pic (int x, int y, qpic_t *pic, float alpha)
 		Scrap_Upload ();
 	gl = (glpic_t *)pic->data;
 
-	VkBuffer buffer;
-	VkDeviceSize buffer_offset;
+	id<MTLBuffer> buffer;
+	uint32_t buffer_offset;
 	basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(6 * sizeof(basicvertex_t), &buffer, &buffer_offset);
 
 	basicvertex_t corner_verts[4];
@@ -593,11 +597,12 @@ void Draw_Pic (int x, int y, qpic_t *pic, float alpha)
 	vertices[3] = corner_verts[2];
 	vertices[4] = corner_verts[3];
 	vertices[5] = corner_verts[0];
-
-	vkCmdBindVertexBuffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-	R_BindPipeline(vulkan_globals.basic_blend_pipeline[render_pass_index]);
-	vkCmdBindDescriptorSets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_pipeline_layout, 0, 1, &gl->gltexture->descriptor_set, 0, NULL);
-	vkCmdDraw(vulkan_globals.command_buffer, 6, 1, 0, 0);
+	
+	R_BindPipeline(&r_metalstate.basic_blend_pipeline[render_pass_index]);
+	R_UpdatePushConstants();
+	[r_metalstate.render_encoder setVertexBuffer:buffer offset:buffer_offset atIndex:VBO_Vertex_Start];
+	TexMgr_BindTexture(gl->gltexture, 0, 0);
+	[r_metalstate.render_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
 }
 
 /*
@@ -662,8 +667,8 @@ void Draw_TileClear (int x, int y, int w, int h)
 
 	gl = (glpic_t *)draw_backtile->data;
 	
-	VkBuffer buffer;
-	VkDeviceSize buffer_offset;
+	id<MTLBuffer> buffer;
+	uint32_t buffer_offset;
 	basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(6 * sizeof(basicvertex_t), &buffer, &buffer_offset);
 
 	basicvertex_t corner_verts[4];
@@ -699,11 +704,12 @@ void Draw_TileClear (int x, int y, int w, int h)
 	vertices[3] = corner_verts[2];
 	vertices[4] = corner_verts[3];
 	vertices[5] = corner_verts[0];
-
-	vkCmdBindDescriptorSets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_pipeline_layout, 0, 1, &gl->gltexture->descriptor_set, 0, NULL);
-	vkCmdBindVertexBuffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-	R_BindPipeline(vulkan_globals.basic_blend_pipeline[render_pass_index]);
-	vkCmdDraw(vulkan_globals.command_buffer, 6, 1, 0, 0);
+	
+	R_BindPipeline(&r_metalstate.basic_blend_pipeline[render_pass_index]);
+	R_UpdatePushConstants();
+	[r_metalstate.render_encoder setVertexBuffer:buffer offset:buffer_offset atIndex:VBO_Vertex_Start];
+	TexMgr_BindTexture(gl->gltexture, 0, 0);
+	[r_metalstate.render_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
 }
 
 /*
@@ -718,8 +724,8 @@ void Draw_Fill (int x, int y, int w, int h, int c, float alpha) //johnfitz -- ad
 	int i;
 	byte *pal = (byte *)d_8to24table; //johnfitz -- use d_8to24table instead of host_basepal
 
-	VkBuffer buffer;
-	VkDeviceSize buffer_offset;
+	id<MTLBuffer> buffer;
+	uint32_t buffer_offset;
 	basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(6 * sizeof(basicvertex_t), &buffer, &buffer_offset);
 
 	basicvertex_t corner_verts[4];
@@ -752,10 +758,11 @@ void Draw_Fill (int x, int y, int w, int h, int c, float alpha) //johnfitz -- ad
 	vertices[3] = corner_verts[2];
 	vertices[4] = corner_verts[3];
 	vertices[5] = corner_verts[0];
-
-	vkCmdBindVertexBuffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-	R_BindPipeline(vulkan_globals.basic_notex_blend_pipeline[render_pass_index]);
-	vkCmdDraw(vulkan_globals.command_buffer, 6, 1, 0, 0);
+	
+	R_BindPipeline(&r_metalstate.basic_notex_blend_pipeline[render_pass_index]);
+	R_UpdatePushConstants();
+	[r_metalstate.render_encoder setVertexBuffer:buffer offset:buffer_offset atIndex:VBO_Vertex_Start];
+	[r_metalstate.render_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
 }
 
 /*
@@ -769,8 +776,8 @@ void Draw_FadeScreen (void)
 
 	GL_SetCanvas (CANVAS_DEFAULT);
 
-	VkBuffer buffer;
-	VkDeviceSize buffer_offset;
+	id<MTLBuffer> buffer;
+	uint32_t buffer_offset;
 	basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(6 * sizeof(basicvertex_t), &buffer, &buffer_offset);
 
 	basicvertex_t corner_verts[4];
@@ -797,10 +804,11 @@ void Draw_FadeScreen (void)
 	vertices[3] = corner_verts[2];
 	vertices[4] = corner_verts[3];
 	vertices[5] = corner_verts[0];
-
-	vkCmdBindVertexBuffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-	R_BindPipeline(vulkan_globals.basic_notex_blend_pipeline[render_pass_index]);
-	vkCmdDraw(vulkan_globals.command_buffer, 6, 1, 0, 0);
+	
+	R_BindPipeline(&r_metalstate.basic_notex_blend_pipeline[render_pass_index]);
+	R_UpdatePushConstants();
+	[r_metalstate.render_encoder setVertexBuffer:buffer offset:buffer_offset atIndex:VBO_Vertex_Start];
+	[r_metalstate.render_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
 
 	Sbar_Changed();
 }
@@ -834,7 +842,8 @@ static void GL_OrthoMatrix(float left, float right, float bottom, float top, flo
 	matrix[3*4 + 2] = tz;
 	matrix[3*4 + 3] = 1.0f;
 
-	vkCmdPushConstants(vulkan_globals.command_buffer, vulkan_globals.basic_pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, 16 * sizeof(float), matrix);
+	memcpy(&r_metalstate.push_constants[0], &matrix[0], 16 * sizeof(float));
+	r_metalstate.push_constants_dirty = true;
 }
 
 /*
@@ -844,15 +853,15 @@ GL_Viewport
 */
 void GL_Viewport(float x, float y, float width, float height)
 {
-	VkViewport viewport;
-	viewport.x = x;
-	viewport.y = vid.height - (y + height);
+	MTLViewport viewport;
+	viewport.originX = x;
+	viewport.originY = y;//vid.height - (y + height);
 	viewport.width = width;
 	viewport.height = height;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-
-	vkCmdSetViewport(vulkan_globals.command_buffer, 0, 1, &viewport);
+	viewport.znear = 0.0f;
+	viewport.zfar = 1.0f;
+	
+	[r_metalstate.render_encoder setViewport:viewport];
 }
 
 /*
@@ -938,85 +947,38 @@ GL_Set2D
 qboolean GL_Set2D (void)
 {
 	currentcanvas = CANVAS_INVALID;
-	GL_SetCanvas (CANVAS_DEFAULT);
 
-	vkCmdEndRenderPass(vulkan_globals.command_buffer);
-
+	// End last pass
+	R_EndPass();
+	
 	if (render_warp)
 	{
-		VkImageMemoryBarrier image_barriers[2];
-		image_barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		image_barriers[0].pNext = NULL;
-		image_barriers[0].srcAccessMask = 0;
-		image_barriers[0].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-		image_barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		image_barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		image_barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		image_barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		image_barriers[0].image = vulkan_globals.color_buffers[0];
-		image_barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		image_barriers[0].subresourceRange.baseMipLevel = 0;
-		image_barriers[0].subresourceRange.levelCount = 1;
-		image_barriers[0].subresourceRange.baseArrayLayer = 0;
-		image_barriers[0].subresourceRange.layerCount = 1;
-
-		image_barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		image_barriers[1].pNext = NULL;
-		image_barriers[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		image_barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		image_barriers[1].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		image_barriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		image_barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		image_barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		image_barriers[1].image = vulkan_globals.color_buffers[1];
-		image_barriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		image_barriers[1].subresourceRange.baseMipLevel = 0;
-		image_barriers[1].subresourceRange.levelCount = 1;
-		image_barriers[1].subresourceRange.baseArrayLayer = 0;
-		image_barriers[1].subresourceRange.layerCount = 1;
-
-		vkCmdPipelineBarrier(vulkan_globals.command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL, 0, NULL, 2, image_barriers);
-		
 		const float push_constants[4] = { 1.0f / (float)vid.width, 1.0f / (float)vid.height, (float)vid.width / (float)vid.height, cl.time };
-		vkCmdPushConstants(vulkan_globals.command_buffer, vulkan_globals.screen_warp_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 4 * sizeof(float), push_constants);
-
-		vkCmdBindDescriptorSets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, vulkan_globals.screen_warp_pipeline_layout, 0, 1, &vulkan_globals.screen_warp_desc_set, 0, NULL);
-		vkCmdBindPipeline(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, vulkan_globals.screen_warp_pipeline);
-		vkCmdDispatch(vulkan_globals.command_buffer, (vid.width + 7) / 8, (vid.height + 7) / 8, 1);
-
-		image_barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		image_barriers[0].pNext = NULL;
-		image_barriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-		image_barriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		image_barriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-		image_barriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		image_barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		image_barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		image_barriers[0].image = vulkan_globals.color_buffers[0];
-		image_barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		image_barriers[0].subresourceRange.baseMipLevel = 0;
-		image_barriers[0].subresourceRange.levelCount = 1;
-		image_barriers[0].subresourceRange.baseArrayLayer = 0;
-		image_barriers[0].subresourceRange.layerCount = 1;
-
-		vkCmdPipelineBarrier(vulkan_globals.command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1, image_barriers);
-	}
-	else
-	{
-		VkMemoryBarrier memory_barrier;
-		memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-		memory_barrier.pNext = NULL;
-		memory_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-		vkCmdPipelineBarrier(vulkan_globals.command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 1, &memory_barrier, 0, NULL, 0, NULL);
+		id<MTLComputeCommandEncoder> computeEncoder = [r_metalstate.current_command_buffer computeCommandEncoder];
+		computeEncoder.label = @"screen warp compute pass";
+		
+		[computeEncoder setComputePipelineState:r_metalstate.screen_warp_compute_pipeline];
+		
+		[computeEncoder setBytes:&push_constants[0] length:sizeof(push_constants) atIndex:0];
+		[computeEncoder setTexture:r_metalstate.color_buffers[1]
+								 atIndex:0];
+		
+		[computeEncoder setTexture:r_metalstate.color_buffers[0]
+								 atIndex:1];
+		
+		MTLSize threadGroupSize = MTLSizeMake(8,8,1);
+		MTLSize threadGroupCount = MTLSizeMake((vid.width + 7) / 8,(vid.height + 7) / 8,1);
+		
+		[computeEncoder dispatchThreadgroups:threadGroupCount threadsPerThreadgroup:threadGroupSize];
+		
+		[computeEncoder endEncoding];
 	}
 
 	if (GL_AcquireNextSwapChainImage() == false)
 		return false;
 
-	vkCmdBeginRenderPass(vulkan_globals.command_buffer, &vulkan_globals.ui_render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+	R_BeginUIPass();
+	GL_SetCanvas (CANVAS_DEFAULT);
 	render_pass_index = 1;
-
 	return true;
 }

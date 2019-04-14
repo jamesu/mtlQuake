@@ -21,6 +21,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "gl_heap.h"
 
+#if 0
+
 /*
 ================================================================================
 
@@ -50,7 +52,7 @@ glheap_t * GL_CreateHeap(VkDeviceSize size, uint32_t memory_type_index, const ch
 		Sys_Error("vkAllocateMemory failed");
 
 	GL_SetObjectName((uint64_t)heap->memory, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, name);
-
+   
 	heap->head = (glheapnode_t*) malloc(sizeof(glheapnode_t));
 	heap->head->offset = 0;
 	heap->head->size = size;
@@ -216,7 +218,7 @@ VkDeviceSize GL_AllocateFromHeaps(int num_heaps, glheap_t ** heaps, VkDeviceSize
 		} else if(new_heap)
 			break;
 	}
-
+   
 	Sys_Error("Could not allocate memory for texture");
 	return 0;
 }
@@ -239,3 +241,5 @@ void GL_FreeFromHeaps(int num_heaps, glheap_t ** heaps, glheap_t * heap, glheapn
 				heaps[i] = NULL;
 	}
 }
+
+#endif

@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //gl_fog.c -- global and volumetric fog
 
 #include "quakedef.h"
+#include "mtl_renderstate.h"
 
 //==============================================================================
 //
@@ -289,7 +290,8 @@ void Fog_SetupFrame (void)
 {
 	float * fog_color = Fog_GetColor();
 	float fog_values[4] = { fog_color[0], fog_color[1], fog_color[2], Fog_GetDensity() / 64.0f };
-	vkCmdPushConstants(vulkan_globals.command_buffer, vulkan_globals.basic_pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 16 * sizeof(float), 4 * sizeof(float), fog_values);
+	memcpy(&r_metalstate.push_constants[16], &fog_values[0], 4 * sizeof(float));
+	r_metalstate.push_constants_dirty = true;
 }
 
 /*
@@ -303,7 +305,8 @@ void Fog_EnableGFog (void)
 {
 	float * fog_color = Fog_GetColor();
 	float fog_values[4] = { fog_color[0], fog_color[1], fog_color[2], Fog_GetDensity() / 64.0f };
-	vkCmdPushConstants(vulkan_globals.command_buffer, vulkan_globals.basic_pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 16 * sizeof(float), 4 * sizeof(float), fog_values);
+	memcpy(&r_metalstate.push_constants[16], &fog_values[0], 4 * sizeof(float));
+	r_metalstate.push_constants_dirty = true;
 }
 
 /*
@@ -316,7 +319,8 @@ called after drawing stuff that should be fogged
 void Fog_DisableGFog (void)
 {
 	float fog_values[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	vkCmdPushConstants(vulkan_globals.command_buffer, vulkan_globals.basic_pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 16 * sizeof(float), 4 * sizeof(float), fog_values);
+	memcpy(&r_metalstate.push_constants[16], &fog_values[0], 4 * sizeof(float));
+	r_metalstate.push_constants_dirty = true;
 }
 
 //==============================================================================

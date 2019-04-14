@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //r_sprite.c -- sprite model rendering
 
 #include "quakedef.h"
+#include "mtl_renderstate.h"
 
 /*
 ================
@@ -141,8 +142,8 @@ void R_DrawSpriteModel (entity_t *e)
 		return;
 	}
 
-	VkBuffer buffer;
-	VkDeviceSize buffer_offset;
+	id<MTLBuffer> buffer;
+	uint32_t buffer_offset;
 	basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(4 * sizeof(basicvertex_t), &buffer, &buffer_offset);
 
 	memset(vertices, 255, 4 * sizeof(basicvertex_t));
@@ -179,16 +180,15 @@ void R_DrawSpriteModel (entity_t *e)
 	vertices[3].texcoord[0] = frame->smax;
 	vertices[3].texcoord[1] = frame->tmax;
 
-	vkCmdBindVertexBuffers(vulkan_globals.command_buffer, 0, 1, &buffer, &buffer_offset);
-	vkCmdBindIndexBuffer(vulkan_globals.command_buffer, vulkan_globals.fan_index_buffer, 0, VK_INDEX_TYPE_UINT16);
-
-	R_BindPipeline(vulkan_globals.sprite_pipeline);
+	R_UpdatePushConstants();
+	R_BindPipeline(&r_metalstate.sprite_pipeline);
+	[r_metalstate.render_encoder setVertexBuffer:buffer offset:buffer_offset atIndex:VBO_Vertex_Start];
 
 	if (psprite->type == SPR_ORIENTED)
-		vkCmdSetDepthBias(vulkan_globals.command_buffer, OFFSET_DECAL, 0.0f, 0.0f);
+		[r_metalstate.render_encoder setDepthBias:OFFSET_DECAL slopeScale:0.0f clamp:0.0f];
 	else
-		vkCmdSetDepthBias(vulkan_globals.command_buffer, OFFSET_NONE, 0.0f, 0.0f);
+		[r_metalstate.render_encoder setDepthBias:OFFSET_NONE slopeScale:0.0f clamp:0.0f];
 
-	vkCmdBindDescriptorSets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_pipeline_layout, 0, 1, &frame->gltexture->descriptor_set, 0, NULL);
-	vkCmdDrawIndexed(vulkan_globals.command_buffer, 6, 1, 0, 0, 0);
+	TexMgr_BindTexture(frame->gltexture, 0, 0);
+	[r_metalstate.render_encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:6 indexType:MTLIndexTypeUInt16 indexBuffer:r_metalstate.fan_index_buffer indexBufferOffset:0];
 }

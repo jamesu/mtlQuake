@@ -24,6 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //r_alias.c -- alias model rendering
 
 #include "quakedef.h"
+#include "mtl_renderstate.h"
 
 extern cvar_t r_drawflat, gl_fullbrights, r_lerpmodels, r_lerpmove; //johnfitz
 
@@ -69,9 +70,9 @@ typedef struct {
 	float model_matrix[16];
 	float shade_vector[3];
 	float blend_factor;
-	float light_color[3];
+	float light_color[4];
+	float entalpha[4];
 	unsigned int use_fullbright;
-	float entalpha;
 } aliasubo_t;
 
 /*
@@ -82,7 +83,7 @@ Returns the offset of the first vertex's meshxyz_t.xyz in the vbo for the given
 model and pose.
 =============
 */
-static VkDeviceSize GLARB_GetXYZOffset (aliashdr_t *hdr, int pose)
+static uint32_t GLARB_GetXYZOffset (aliashdr_t *hdr, int pose)
 {
 	meshxyz_t dummy;
 	int xyzoffs = ((char*)&dummy.xyz - (char*)&dummy);
@@ -115,31 +116,40 @@ static void GL_DrawAliasFrame (aliashdr_t *paliashdr, lerpdata_t lerpdata, gltex
 		blend = 0;
 	}
 
-	VkPipeline pipeline = alphatest ? vulkan_globals.alias_alphatest_pipeline : ((entalpha < 1.0f) ? vulkan_globals.alias_blend_pipeline : vulkan_globals.alias_pipeline);
+	MetalRenderPipeline_t* pipeline = alphatest ? &r_metalstate.alias_alphatest_pipeline : ((entalpha < 1.0f) ? &r_metalstate.alias_blend_pipeline : &r_metalstate.alias_pipeline);
+	
+	R_UpdatePushConstants();
 	R_BindPipeline(pipeline);
 
-	VkBuffer uniform_buffer;
+	id<MTLBuffer> uniform_buffer;
 	uint32_t uniform_offset;
-	VkDescriptorSet ubo_set;
-	aliasubo_t * ubo = (aliasubo_t*)R_UniformAllocate(sizeof(aliasubo_t), &uniform_buffer, &uniform_offset, &ubo_set);
+	aliasubo_t * ubo = (aliasubo_t*)R_UniformAllocate(sizeof(aliasubo_t), &uniform_buffer, &uniform_offset);
 	
 	memcpy(ubo->model_matrix, model_matrix, 16 * sizeof(float));
 	memcpy(ubo->shade_vector, shadevector, 3 * sizeof(float));
 	ubo->blend_factor = blend;
 	memcpy(ubo->light_color, lightcolor, 3 * sizeof(float));
+	ubo->light_color[3] = 1.0f;
 	ubo->use_fullbright = (fb != NULL) ? 1 : 0;
-	ubo->entalpha = entalpha;
-
-	VkDescriptorSet descriptor_sets[3] = { tx->descriptor_set, (fb != NULL) ? fb->descriptor_set : tx->descriptor_set, ubo_set };
-	vulkan_globals.vk_cmd_bind_descriptor_sets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.alias_pipeline_layout, 0, 3, descriptor_sets, 1, &uniform_offset);
-
-	VkBuffer vertex_buffers[3] = { currententity->model->vertex_buffer, currententity->model->vertex_buffer, currententity->model->vertex_buffer };
-	VkDeviceSize vertex_offsets[3] = { (unsigned)currententity->model->vbostofs, GLARB_GetXYZOffset (paliashdr, lerpdata.pose1), GLARB_GetXYZOffset (paliashdr, lerpdata.pose2) };
-	vulkan_globals.vk_cmd_bind_vertex_buffers(vulkan_globals.command_buffer, 0, 3, vertex_buffers, vertex_offsets);
-	vulkan_globals.vk_cmd_bind_index_buffer(vulkan_globals.command_buffer, currententity->model->index_buffer, 0, VK_INDEX_TYPE_UINT16);
-
-	vulkan_globals.vk_cmd_draw_indexed(vulkan_globals.command_buffer, paliashdr->numindexes, 1, 0, 0, 0);
-
+	ubo->entalpha[0] = entalpha;
+	ubo->entalpha[1] = 0;
+	ubo->entalpha[2] = 0;
+	ubo->entalpha[3] = 0;
+	
+	
+	glmodel_metal_t* priv = GLMesh_GetPrivateData(currententity->model);
+	[r_metalstate.render_encoder setVertexBuffer:uniform_buffer offset:uniform_offset atIndex:VBO_UBO];
+	[r_metalstate.render_encoder setFragmentBuffer:uniform_buffer offset:uniform_offset atIndex:VBO_UBO];
+	[r_metalstate.render_encoder setVertexBuffer:priv->vertex_buffer offset:(unsigned)currententity->model->vbostofs atIndex:VBO_Alias_Vertex_Start];
+	[r_metalstate.render_encoder setVertexBuffer:priv->vertex_buffer offset:GLARB_GetXYZOffset(paliashdr, lerpdata.pose1) atIndex:VBO_Alias_Vertex_Start+1];
+	[r_metalstate.render_encoder setVertexBuffer:priv->vertex_buffer offset:GLARB_GetXYZOffset(paliashdr, lerpdata.pose2) atIndex:VBO_Alias_Vertex_Start+2];
+	
+	TexMgr_BindTexture(tx, 0, 0);
+	TexMgr_BindTexture(fb != NULL ? fb : tx, 1, 1);
+	
+	[r_metalstate.render_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+	[r_metalstate.render_encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:paliashdr->numindexes indexType:MTLIndexTypeUInt16 indexBuffer:priv->index_buffer indexBufferOffset:0];
+	
 	rs_aliaspasses += paliashdr->numtris;
 }
 

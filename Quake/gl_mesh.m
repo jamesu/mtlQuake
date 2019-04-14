@@ -24,6 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 #include "gl_heap.h"
+#include "mtl_renderstate.h"
 
 /*
 =================================================================
@@ -59,8 +60,8 @@ int		stripcount;
 #define VERTEX_HEAP_SIZE_MB 16
 #define GEOMETRY_MAX_HEAPS 4
 
-static glheap_t * vertex_buffer_heaps[GEOMETRY_MAX_HEAPS];
-static glheap_t * index_buffer_heaps[GEOMETRY_MAX_HEAPS];
+//static glheap_t * vertex_buffer_heaps[GEOMETRY_MAX_HEAPS];
+//static glheap_t * index_buffer_heaps[GEOMETRY_MAX_HEAPS];
 
 /*
 ================
@@ -470,8 +471,9 @@ static void GLMesh_LoadVertexBuffer (qmodel_t *m, const aliashdr_t *hdr)
 	const trivertx_t *trivertexes;
 	byte *vbodata;
 	int f;
-	VkResult err;
-
+	NSError *err;
+	glmodel_metal_t* priv;
+	
 // count the sizes we need
 	
 	// ericw -- RMQEngine stored these vbo*ofs values in aliashdr_t, but we must not
@@ -489,6 +491,8 @@ static void GLMesh_LoadVertexBuffer (qmodel_t *m, const aliashdr_t *hdr)
 	if (!hdr->numindexes) return;
 	if (!totalvbosize) return;
 	
+	priv = GLMesh_GetPrivateData(m);
+	
 // grab the pointers to data in the extradata
 
 	desc = (aliasmesh_t *) ((byte *) hdr + hdr->meshdesc);
@@ -497,52 +501,9 @@ static void GLMesh_LoadVertexBuffer (qmodel_t *m, const aliashdr_t *hdr)
 
 	{
 		const int totalindexsize = hdr->numindexes * sizeof (unsigned short);
-
-		// Allocate index buffer & upload to GPU
-		VkBufferCreateInfo buffer_create_info;
-		memset(&buffer_create_info, 0, sizeof(buffer_create_info));
-		buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		buffer_create_info.size = totalindexsize;
-		buffer_create_info.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		err = vkCreateBuffer(vulkan_globals.device, &buffer_create_info, NULL, &m->index_buffer);
-		if (err != VK_SUCCESS)
-			Sys_Error("vkCreateBuffer failed");
-
-		GL_SetObjectName((uint64_t)m->index_buffer, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, m->name);
-
-		VkMemoryRequirements memory_requirements;
-		vkGetBufferMemoryRequirements(vulkan_globals.device, m->index_buffer, &memory_requirements);
-
-		uint32_t memory_type_index = GL_MemoryTypeFromProperties(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
-		VkDeviceSize heap_size = INDEX_HEAP_SIZE_MB * (VkDeviceSize)1024 * (VkDeviceSize)1024;
-		VkDeviceSize aligned_offset = GL_AllocateFromHeaps(GEOMETRY_MAX_HEAPS, index_buffer_heaps, heap_size, memory_type_index, memory_requirements.size,
-			memory_requirements.alignment, &m->index_heap, &m->index_heap_node, &num_vulkan_mesh_allocations, "Index Buffers");
-		err = vkBindBufferMemory(vulkan_globals.device, m->index_buffer, m->index_heap->memory, aligned_offset);
-		if (err != VK_SUCCESS)
-			Sys_Error("vkBindBufferMemory failed");
-
-		remaining_size = totalindexsize;
-		copy_offset = 0;
-
-		while (remaining_size > 0)
-		{
-			const int size_to_copy = q_min(remaining_size, vulkan_globals.staging_buffer_size);
-			VkBuffer staging_buffer;
-			VkCommandBuffer command_buffer;
-			int staging_offset;
-			unsigned char * staging_memory = R_StagingAllocate(size_to_copy, 1, &command_buffer, &staging_buffer, &staging_offset);
-
-			memcpy(staging_memory, (byte*)indexes + copy_offset, size_to_copy);
-
-			VkBufferCopy region;
-			region.srcOffset = staging_offset;
-			region.dstOffset = copy_offset;
-			region.size = size_to_copy;
-			vkCmdCopyBuffer(command_buffer, staging_buffer, m->index_buffer, 1, &region);
-
-			copy_offset += size_to_copy;
-			remaining_size -= size_to_copy;
-		}
+		priv->index_buffer = [r_metalstate.device newBufferWithBytes:indexes length:totalindexsize options:MTLResourceCPUCacheModeDefaultCache];
+		priv->index_buffer.label = [NSString stringWithUTF8String:m->name];
+		num_metal_mesh_allocations++;
 	}
 
 // create the vertex buffer (empty)
@@ -596,50 +557,9 @@ static void GLMesh_LoadVertexBuffer (qmodel_t *m, const aliashdr_t *hdr)
 
 	// Allocate vertex buffer & upload to GPU
 	{
-		VkBufferCreateInfo buffer_create_info;
-		memset(&buffer_create_info, 0, sizeof(buffer_create_info));
-		buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		buffer_create_info.size = totalvbosize;
-		buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		err = vkCreateBuffer(vulkan_globals.device, &buffer_create_info, NULL, &m->vertex_buffer);
-		if (err != VK_SUCCESS)
-			Sys_Error("vkCreateBuffer failed");
-
-		GL_SetObjectName((uint64_t)m->vertex_buffer, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, m->name);
-
-		VkMemoryRequirements memory_requirements;
-		vkGetBufferMemoryRequirements(vulkan_globals.device, m->vertex_buffer, &memory_requirements);
-
-		uint32_t memory_type_index = GL_MemoryTypeFromProperties(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
-		VkDeviceSize heap_size = VERTEX_HEAP_SIZE_MB * (VkDeviceSize)1024 * (VkDeviceSize)1024;
-		VkDeviceSize aligned_offset = GL_AllocateFromHeaps(GEOMETRY_MAX_HEAPS, vertex_buffer_heaps, heap_size, memory_type_index, memory_requirements.size,
-			memory_requirements.alignment, &m->vertex_heap, &m->vertex_heap_node, &num_vulkan_mesh_allocations, "Vertex Buffers");
-		err = vkBindBufferMemory(vulkan_globals.device, m->vertex_buffer, m->vertex_heap->memory, aligned_offset);
-		if (err != VK_SUCCESS)
-			Sys_Error("vkBindBufferMemory failed");
-
-		remaining_size = totalvbosize;
-		copy_offset = 0;
-
-		while (remaining_size > 0)
-		{
-			const int size_to_copy = q_min(remaining_size, vulkan_globals.staging_buffer_size);
-			VkBuffer staging_buffer;
-			VkCommandBuffer command_buffer;
-			int staging_offset;
-			unsigned char * staging_memory = R_StagingAllocate(size_to_copy, 1, &command_buffer, &staging_buffer, &staging_offset);
-
-			memcpy(staging_memory, (byte*)vbodata + copy_offset, size_to_copy);
-
-			VkBufferCopy region;
-			region.srcOffset = staging_offset;
-			region.dstOffset = copy_offset;
-			region.size = size_to_copy;
-			vkCmdCopyBuffer(command_buffer, staging_buffer, m->vertex_buffer, 1, &region);
-
-			copy_offset += size_to_copy;
-			remaining_size -= size_to_copy;
-		}
+		priv->vertex_buffer = [r_metalstate.device newBufferWithBytes:vbodata length:totalvbosize options:MTLResourceCPUCacheModeDefaultCache];
+		priv->vertex_buffer.label = [NSString stringWithUTF8String:m->name];
+		num_metal_mesh_allocations++;
 	}
 
 	free (vbodata);
@@ -679,7 +599,7 @@ Delete VBOs for all loaded alias models
 void GLMesh_DeleteVertexBuffers (void)
 {
 	GL_WaitForDeviceIdle();
-
+	
 	int j;
 	qmodel_t *m;
 	
@@ -687,18 +607,15 @@ void GLMesh_DeleteVertexBuffers (void)
 	{
 		if (!(m = cl.model_precache[j])) break;
 		if (m->type != mod_alias) continue;
-
-		vkDestroyBuffer(vulkan_globals.device, m->vertex_buffer, NULL);
-		GL_FreeFromHeaps(GEOMETRY_MAX_HEAPS, vertex_buffer_heaps, m->vertex_heap, m->vertex_heap_node, &num_vulkan_mesh_allocations);
-
-		vkDestroyBuffer(vulkan_globals.device, m->index_buffer, NULL);
-		GL_FreeFromHeaps(GEOMETRY_MAX_HEAPS, index_buffer_heaps, m->index_heap, m->index_heap_node, &num_vulkan_mesh_allocations);
-
-		m->vertex_buffer = VK_NULL_HANDLE;
-		m->vertex_heap = NULL;
-		m->vertex_heap_node = NULL;
-		m->index_buffer = VK_NULL_HANDLE;
-		m->index_heap = NULL;
-		m->index_heap_node = NULL;
+		
+		glmodel_metal_t* priv = GLMesh_GetPrivateData(m);
+		priv->vertex_buffer = nil;
+		priv->index_buffer = nil;
+		num_metal_mesh_allocations -= 2;
 	}
+}
+
+glmodel_metal_t* GLMesh_GetPrivateData(qmodel_t *model)
+{
+	return (glmodel_metal_t*)&model->privateData;
 }

@@ -42,10 +42,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef	QUAKESPASM_VER_SUFFIX
 #define	QUAKESPASM_VER_SUFFIX		// optional version suffix string literal like "-beta1"
 #endif
-#define	VKQUAKE_VERSION		1.01
-#define	VKQUAKE_VER_PATCH	0	// helper to print a string like 0.92.1
-#ifndef	VKQUAKE_VER_SUFFIX
-#define	VKQUAKE_VER_SUFFIX		// optional version suffix like -beta1
+#define	MTLQUAKE_VERSION		0.1
+#define	MTLQUAKE_VER_PATCH	0	// helper to print a string like 0.92.1
+#ifndef	MTLQUAKE_VER_SUFFIX
+#define	MTLQUAKE_VER_SUFFIX		// optional version suffix like -beta1
 #endif
 
 #define	QS_STRINGIFY_(x)	#x
@@ -53,7 +53,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // combined version string like "0.92.1-beta1"
 #define	QUAKESPASM_VER_STRING	QS_STRINGIFY(QUAKESPASM_VERSION) "." QS_STRINGIFY(QUAKESPASM_VER_PATCH) QUAKESPASM_VER_SUFFIX
-#define VKQUAKE_VER_STRING	QS_STRINGIFY(VKQUAKE_VERSION) "." QS_STRINGIFY(VKQUAKE_VER_PATCH) VKQUAKE_VER_SUFFIX
+#define MTLQUAKE_VER_STRING	QS_STRINGIFY(MTLQUAKE_VERSION) "." QS_STRINGIFY(MTLQUAKE_VER_PATCH) MTLQUAKE_VER_SUFFIX
 
 //define	PARANOID			// speed sapping error checking
 
@@ -239,8 +239,6 @@ typedef struct
 #include "SDL.h"
 #endif
 
-#include <vulkan/vulkan_core.h>
-
 #include "console.h"
 #include "wad.h"
 #include "vid.h"
@@ -263,6 +261,16 @@ typedef struct
 #include "cdaudio.h"
 #include "glquake.h"
 #include "../Shaders/shaders.h"
+
+void R_BeginUIPass(void);
+void R_BeginScenePass(void);
+void R_BeginWarpPass(texture_t* tex);
+void R_BeginWarpComputePass();
+void R_BeginWarpMipGen(void);
+void R_GenMipsForTexture(gltexture_t* tex);
+void R_EndWarpMipGen(void);
+void R_EndPass(void);
+
 
 //=============================================================================
 
@@ -328,11 +336,11 @@ extern qboolean		isDedicated;
 
 extern int		minimum_memory;
 
-extern int num_vulkan_tex_allocations;
-extern int num_vulkan_bmodel_allocations;
-extern int num_vulkan_mesh_allocations;
-extern int num_vulkan_misc_allocations;
-extern int num_vulkan_dynbuf_allocations;
+extern int num_metal_tex_allocations;
+extern int num_metal_bmodel_allocations;
+extern int num_metal_mesh_allocations;
+extern int num_metal_misc_allocations;
+extern int num_metal_dynbuf_allocations;
 
 #endif	/* QUAKEDEFS_H */
 

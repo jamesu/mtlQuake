@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "quakedef.h"
+#include "mtl_renderstate.h"
 
 #define MAX_PARTICLES			2048	// default max # of particles at one
 										//  time
@@ -846,8 +847,8 @@ static void R_DrawParticlesFaces(void)
 	for (p = active_particles; p; p = p->next)
 		num_triangles += 1;
 
-	VkBuffer vertex_buffer;
-	VkDeviceSize vertex_buffer_offset;
+	id<MTLBuffer> vertex_buffer;
+	uint32_t vertex_buffer_offset;
 	basicvertex_t * vertices = (basicvertex_t*)R_VertexAllocate(num_triangles * 3 * sizeof(basicvertex_t), &vertex_buffer, &vertex_buffer_offset);
 
 	int current_vertex = 0;
@@ -903,9 +904,10 @@ static void R_DrawParticlesFaces(void)
 
 		rs_particles++;
 	}
-
-	vulkan_globals.vk_cmd_bind_vertex_buffers(vulkan_globals.command_buffer, 0, 1, &vertex_buffer, &vertex_buffer_offset);
-	vulkan_globals.vk_cmd_draw(vulkan_globals.command_buffer, num_triangles * 3, 1, 0, 0);
+	
+	R_UpdatePushConstants();
+	[r_metalstate.render_encoder setVertexBuffer:vertex_buffer offset:vertex_buffer_offset atIndex:VBO_Vertex_Start];
+	[r_metalstate.render_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:num_triangles * 3];
 }
 
 /*
@@ -915,8 +917,9 @@ R_DrawParticles -- johnfitz -- moved all non-drawing code to CL_RunParticles
 */
 void R_DrawParticles (void)
 {
-	R_BindPipeline(vulkan_globals.particle_pipeline);
-	vulkan_globals.vk_cmd_bind_descriptor_sets(vulkan_globals.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_pipeline_layout, 0, 1, &particletexture->descriptor_set, 0, NULL);
+	R_BindPipeline(&r_metalstate.particle_pipeline);
+	
+	TexMgr_BindTexture(particletexture, 0, 0);
 
 	R_DrawParticlesFaces();
 }
@@ -929,9 +932,9 @@ R_DrawParticles_ShowTris -- johnfitz
 void R_DrawParticles_ShowTris (void)
 {
 	if (r_showtris.value == 1)
-		R_BindPipeline(vulkan_globals.showtris_pipeline);
+		R_BindPipeline(&r_metalstate.showtris_pipeline);
 	else
-		R_BindPipeline(vulkan_globals.showtris_depth_test_pipeline);
+		R_BindPipeline(&r_metalstate.showtris_depth_test_pipeline);
 
 	R_DrawParticlesFaces();
 }

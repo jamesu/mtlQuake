@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // r_main.c
 
 #include "quakedef.h"
+#include "mtl_renderstate.h"
 
 qboolean	r_cache_thrash;		// compatability
 
@@ -321,29 +322,30 @@ void R_SetupMatrix (void)
 				r_refdef.vrect.height);
 
 	// Projection matrix
-	GL_FrustumMatrix(vulkan_globals.projection_matrix, DEG2RAD(r_fovx), DEG2RAD(r_fovy));
+	GL_FrustumMatrix(r_metalstate.projection_matrix, DEG2RAD(r_fovx), DEG2RAD(r_fovy));
 
 	// View matrix
 	float rotation_matrix[16];
-	RotationMatrix(vulkan_globals.view_matrix, -M_PI / 2.0f, 1.0f, 0.0f, 0.0f);
+	RotationMatrix(r_metalstate.view_matrix, -M_PI / 2.0f, 1.0f, 0.0f, 0.0f);
 	RotationMatrix(rotation_matrix,  M_PI / 2.0f, 0.0f, 0.0f, 1.0f);
-	MatrixMultiply(vulkan_globals.view_matrix, rotation_matrix);
+	MatrixMultiply(r_metalstate.view_matrix, rotation_matrix);
 	RotationMatrix(rotation_matrix, DEG2RAD(-r_refdef.viewangles[2]), 1.0f, 0.0f, 0.0f);
-	MatrixMultiply(vulkan_globals.view_matrix, rotation_matrix);
+	MatrixMultiply(r_metalstate.view_matrix, rotation_matrix);
 	RotationMatrix(rotation_matrix, DEG2RAD(-r_refdef.viewangles[0]), 0.0f, 1.0f, 0.0f);
-	MatrixMultiply(vulkan_globals.view_matrix, rotation_matrix);
+	MatrixMultiply(r_metalstate.view_matrix, rotation_matrix);
 	RotationMatrix(rotation_matrix, DEG2RAD(-r_refdef.viewangles[1]), 0.0f, 0.0f, 1.0f);
-	MatrixMultiply(vulkan_globals.view_matrix, rotation_matrix);
+	MatrixMultiply(r_metalstate.view_matrix, rotation_matrix);
 	
 	float translation_matrix[16];
 	TranslationMatrix(translation_matrix, -r_refdef.vieworg[0], -r_refdef.vieworg[1], -r_refdef.vieworg[2]);
-	MatrixMultiply(vulkan_globals.view_matrix, translation_matrix);
+	MatrixMultiply(r_metalstate.view_matrix, translation_matrix);
 
 	// View projection matrix
-	memcpy(vulkan_globals.view_projection_matrix, vulkan_globals.projection_matrix, 16 * sizeof(float));
-	MatrixMultiply(vulkan_globals.view_projection_matrix, vulkan_globals.view_matrix);
+	memcpy(r_metalstate.view_projection_matrix, r_metalstate.projection_matrix, 16 * sizeof(float));
+	MatrixMultiply(r_metalstate.view_projection_matrix, r_metalstate.view_matrix);
 
-	vkCmdPushConstants(vulkan_globals.command_buffer, vulkan_globals.basic_pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, 16 * sizeof(float), vulkan_globals.view_projection_matrix);
+	memcpy(&r_metalstate.push_constants[0], &r_metalstate.view_projection_matrix[0], 16 * sizeof(float));
+	r_metalstate.push_constants_dirty = true;
 }
 
 /*
@@ -354,7 +356,7 @@ R_SetupScene
 void R_SetupScene (void)
 {
 	render_pass_index = 0;
-	vkCmdBeginRenderPass(vulkan_globals.command_buffer, &vulkan_globals.main_render_pass_begin_infos[render_warp ? 1 : 0], VK_SUBPASS_CONTENTS_INLINE);
+	R_BeginScenePass();
 
 	R_PushDlights();
 	R_AnimateLight ();
@@ -500,20 +502,20 @@ void R_DrawViewModel (void)
 	//johnfitz
 
 	// hack the depth range to prevent view model from poking into walls
-	VkViewport viewport;
-	viewport.x = 0;
-	viewport.y = 0;
+	MTLViewport viewport;
+	viewport.originX = 0;
+	viewport.originY = 0;
 	viewport.width = vid.width;
 	viewport.height = vid.height;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 0.3f;
-	vkCmdSetViewport(vulkan_globals.command_buffer, 0, 1, &viewport);
+	viewport.znear = 0.0f;
+	viewport.zfar = 0.3f;
+	[r_metalstate.render_encoder setViewport:viewport];
 	
 	R_DrawAliasModel (currententity);
 
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(vulkan_globals.command_buffer, 0, 1, &viewport);
+	viewport.znear = 0.0f;
+	viewport.zfar = 1.0f;
+	[r_metalstate.render_encoder setViewport:viewport];
 }
 
 /*
@@ -526,7 +528,7 @@ void R_ShowTris(void)
 	extern cvar_t r_particles;
 	int i;
 
-	if (r_showtris.value < 1 || r_showtris.value > 2 || cl.maxclients > 1 || !vulkan_globals.non_solid_fill)
+	if (r_showtris.value < 1 || r_showtris.value > 2 || cl.maxclients > 1 || !r_metalstate.non_solid_fill)
 		return;
 
 	if (r_drawworld.value)
