@@ -318,7 +318,49 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		3261F9A7225A11F100CDF8C8 /* src */ = {
+		3261FA9D225A161800CDF8C8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				3261FAB2225A255300CDF8C8 /* Carbon.framework */,
+				3261FAB0225A254800CDF8C8 /* IOKit.framework */,
+				3261FAAE225A250100CDF8C8 /* Foundation.framework */,
+				3261FAAC225A24CF00CDF8C8 /* OpenGL.framework */,
+				3261FAAA225A24C600CDF8C8 /* ForceFeedback.framework */,
+				3261FAA8225A24B100CDF8C8 /* CoreGraphics.framework */,
+				3261FAA5225A249800CDF8C8 /* AudioToolbox.framework */,
+				3261FAA4225A249800CDF8C8 /* AudioUnit.framework */,
+				3261FAA2225A247400CDF8C8 /* Cocoa.framework */,
+				3261FAA0225A247100CDF8C8 /* CoreAudio.framework */,
+				3261FA9E225A161800CDF8C8 /* Metal.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		32658852226326BB0027A1CB /* MetalShaders */ = {
+			isa = PBXGroup;
+			children = (
+				32A28891226232D10049264B /* cs_tex_warp_comp.metal */,
+				32A28892226232D10049264B /* screen_warp_comp.metal */,
+				327DA1B1225B506300683895 /* alias_alphatest_frag.metal */,
+				3261FABE225AAD8B00CDF8C8 /* alias_frag.metal */,
+				3261FABD225AAD8B00CDF8C8 /* alias_vert.metal */,
+				3261FAB7225AAD8B00CDF8C8 /* basic_alphatest_frag.metal */,
+				3261FAC3225AAD8C00CDF8C8 /* basic_frag.metal */,
+				3261FABF225AAD8B00CDF8C8 /* basic_notex_frag.metal */,
+				3261FAC0225AAD8B00CDF8C8 /* basic_vert.metal */,
+				3261FAB6225AAD8B00CDF8C8 /* postprocess_frag.metal */,
+				3261FABC225AAD8B00CDF8C8 /* postprocess_vert.metal */,
+				3261FABB225AAD8B00CDF8C8 /* showtris_frag.metal */,
+				3261FAB8225AAD8B00CDF8C8 /* showtris_vert.metal */,
+				3261FAC1225AAD8B00CDF8C8 /* sky_layer_frag.metal */,
+				3261FABA225AAD8B00CDF8C8 /* sky_layer_vert.metal */,
+				3261FAC2225AAD8B00CDF8C8 /* world_frag.metal */,
+				3261FAB9225AAD8B00CDF8C8 /* world_vert.metal */,
+			);
+			name = MetalShaders;
+			sourceTree = "<group>";
+		};
+		3265885522633A120027A1CB /* Quake */ = {
 			isa = PBXGroup;
 			children = (
 				3261FA0A225A123000CDF8C8 /* anorm_dots.h */,
@@ -466,55 +508,13 @@
 				3261F9FB225A122E00CDF8C8 /* zone.h */,
 				3261FAB4225A51F700CDF8C8 /* mtl_renderstate.h */,
 			);
-			path = src;
-			sourceTree = "<group>";
-		};
-		3261FA9D225A161800CDF8C8 /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				3261FAB2225A255300CDF8C8 /* Carbon.framework */,
-				3261FAB0225A254800CDF8C8 /* IOKit.framework */,
-				3261FAAE225A250100CDF8C8 /* Foundation.framework */,
-				3261FAAC225A24CF00CDF8C8 /* OpenGL.framework */,
-				3261FAAA225A24C600CDF8C8 /* ForceFeedback.framework */,
-				3261FAA8225A24B100CDF8C8 /* CoreGraphics.framework */,
-				3261FAA5225A249800CDF8C8 /* AudioToolbox.framework */,
-				3261FAA4225A249800CDF8C8 /* AudioUnit.framework */,
-				3261FAA2225A247400CDF8C8 /* Cocoa.framework */,
-				3261FAA0225A247100CDF8C8 /* CoreAudio.framework */,
-				3261FA9E225A161800CDF8C8 /* Metal.framework */,
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		32658852226326BB0027A1CB /* MetalShaders */ = {
-			isa = PBXGroup;
-			children = (
-				32A28891226232D10049264B /* cs_tex_warp_comp.metal */,
-				32A28892226232D10049264B /* screen_warp_comp.metal */,
-				327DA1B1225B506300683895 /* alias_alphatest_frag.metal */,
-				3261FABE225AAD8B00CDF8C8 /* alias_frag.metal */,
-				3261FABD225AAD8B00CDF8C8 /* alias_vert.metal */,
-				3261FAB7225AAD8B00CDF8C8 /* basic_alphatest_frag.metal */,
-				3261FAC3225AAD8C00CDF8C8 /* basic_frag.metal */,
-				3261FABF225AAD8B00CDF8C8 /* basic_notex_frag.metal */,
-				3261FAC0225AAD8B00CDF8C8 /* basic_vert.metal */,
-				3261FAB6225AAD8B00CDF8C8 /* postprocess_frag.metal */,
-				3261FABC225AAD8B00CDF8C8 /* postprocess_vert.metal */,
-				3261FABB225AAD8B00CDF8C8 /* showtris_frag.metal */,
-				3261FAB8225AAD8B00CDF8C8 /* showtris_vert.metal */,
-				3261FAC1225AAD8B00CDF8C8 /* sky_layer_frag.metal */,
-				3261FABA225AAD8B00CDF8C8 /* sky_layer_vert.metal */,
-				3261FAC2225AAD8B00CDF8C8 /* world_frag.metal */,
-				3261FAB9225AAD8B00CDF8C8 /* world_vert.metal */,
-			);
-			name = MetalShaders;
+			path = Quake;
 			sourceTree = "<group>";
 		};
 		32A8FDCF225A0DBE00A889E5 = {
 			isa = PBXGroup;
 			children = (
-				3261F9A7225A11F100CDF8C8 /* src */,
+				3265885522633A120027A1CB /* Quake */,
 				32A8FDDA225A0DBE00A889E5 /* Mac */,
 				32A8FDD9225A0DBE00A889E5 /* Products */,
 				3261FA9D225A161800CDF8C8 /* Frameworks */,
